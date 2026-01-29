@@ -2,3 +2,4 @@
 from .graph import Graph
 from . import cfd_dataset, transforms, nn, metrics
 from .data_loader import DataLoader
+from .process import *

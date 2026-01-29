@@ -65,6 +65,30 @@ class Dataset(torch.utils.data.Dataset):
             h5_file.close()
             return num_samples
 
+    def summary(self):
+        """Prints a detailed readout of the dataset structure."""
+        with h5py.File(self.path, 'r') as f:
+            data_shape = f['data'].shape
+            
+        print("-" * 30)
+        print(f"DATASET STRUCTURE: {self.__class__.__name__}")
+        print("-" * 30)
+        print(f"File Path:       {self.path}")
+        print(f"Total Samples:   {data_shape[0]}")
+        print(f"Nodes per Mesh:  {data_shape[1]}")
+        print(f"Features/Time:   {data_shape[2]}")
+        print(f"Preloaded:       {self.preload}")
+        
+        if self.training_info:
+            print("\nTRAINING CONFIGURATION:")
+            for k, v in self.training_info.items():
+                print(f"  {k:12}: {v}")
+            print(f"  Seq Length:   {self.training_sequences_length} (total steps needed)")
+        print("-" * 30)
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__} (samples={self.__len__()}, path={self.path})>"
+
     def __getitem__(self,
                     idx: int) -> Graph:
         r"""Get the idx-th training sequence."""
@@ -129,7 +153,7 @@ class Dataset(torch.utils.data.Dataset):
 
 
 
-class NsCircle(Dataset):
+class NsEllipse(Dataset):
     r"""Dataset for the incompressible flow around a circular cylinder. The data is available at [https://doi.org/10.5281/zenodo.7870707](https://doi.org/10.5281/zenodo.7870707).
 
     Args:
@@ -150,6 +174,25 @@ class NsCircle(Dataset):
         super().__init__(*args, **kwargs)
         assert format in ["uv", "uvp"], f"Format {format} not supported, use 'uv' or 'uvp'"
         self.format = format
+
+    def summary(self):
+        """Extended summary explaining the CFD-specific data mapping."""
+        super().summary()
+        print("\nDATA MAPPING (NsCircle):")
+        print("  Cols [0:2]:    Position (x, y)")
+        print("  Col  [2]:      Global Parameter (Re)")
+        print("  Col  [3]:      Boundary Condition ID")
+        
+        field_type = "u, v, p" if self.format == "uvp" else "u, v"
+        print(f"  Cols [4:]:     Field Data ({field_type}) interleaved over time")
+        
+        if self.training_info:
+            n_in, n_out = self.training_info['n_in'], self.training_info['n_out']
+            total_channels = 3 if self.format == "uvp" else 2
+            print(f"\nGRAPH OUTPUT STRUCTURE:")
+            print(f"  Input Channels:  {n_in * total_channels} ({n_in} steps * {total_channels} vars)")
+            print(f"  Target Channels: {n_out * total_channels} ({n_out} steps * {total_channels} vars)")
+        print("-" * 30)
 
     def data2graph(self,
                    data: torch.Tensor,

@@ -5,11 +5,18 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "h5py>=3.15.1",
+    "ipykernel>=7.1.0",
+    "ipywidgets>=8.1.8",
     "numpy>=2.3.5",
     "scipy>=1.17.0",
     "tensorboard>=2.20.0",
-    "torch>=2.9.1",
+    "torch==2.8.*",
+    "torch-cluster>=1.6.3",
     "torch-geometric>=2.7.0",
-    "torchvision>=0.24.1",
+    "torchvision>=0.23.0",
     "vtk>=9.5.2",
 ]
+
+[tool.uv.extra-build-dependencies]
+torch_cluster = ["torch"]

@@ -1,11 +1,11 @@
 import contextlib
 import os
+from typing import Union, Optional, List, Callable
 import torch
 from torch import nn, optim
-from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.data import Batch
-from typing import Union, Optional, List, Callable
+from tqdm import tqdm
 
 from ..graph import Graph
 from ..data_loader import DataLoader
@@ -357,6 +357,6 @@ class GNN(nn.Module):
         """Returns the L2 norm of the gradients."""
         norm = 0.
         for p in self.parameters():
-            if p.requires_grad:
+            if p.requires_grad and p.grad is not None:
                 norm += p.grad.data.norm(2).item()**2
         return norm**.5

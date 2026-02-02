@@ -5,7 +5,7 @@ A flexible system to programmatically generate multi-scale GNN architectures
 with arbitrary numbers of layers, hidden dimensions, and message passing blocks.
 
 Usage:
-    from GNN_Architect import GNNArchBuilder, MultiScaleGNNBuilder
+    from GNN_Architect import GNNArchBuilder, MultiScaleGNNBuilde
     
     # Simple single-scale GNN
     arch = GNNArchBuilder(
@@ -39,13 +39,15 @@ class GNNArchBuilder:
     """
     
     def __init__(self,
-                 num_mp_blocks: int,
-                 hidden_dim: Union[int, List[int]],
-                 edge_encoder_in: int = 2,
-                 node_encoder_in: int = 5,
-                 decoder_out: int = 3,
-                 mlp_depth: int = 3,
-                 use_activation: bool = True):
+                 arch_parameters: Dict = {
+                    "num_mp_blocks": 4,
+                    "hidden_dim": 128,
+                    "edge_encoder_in": 2,
+                    "node_encoder_in": 4,
+                    "decoder_out": 3,
+                    "mlp_depth": 3},
+                 use_activation: bool = True                 
+                ):
         """
         Args:
             num_mp_blocks: Number of message passing blocks to create
@@ -56,7 +58,17 @@ class GNNArchBuilder:
             mlp_depth: Depth of MLP layers (number of hidden layers in each MLP)
             use_activation: Whether to use activation in encoder/decoder
         """
+
+
+        num_mp_blocks = arch_parameters.get("num_mp_blocks")
+        hidden_dim=arch_parameters.get("hidden_dim")
+        edge_encoder_in=arch_parameters.get("edge_encoder_in")
+        node_encoder_in=arch_parameters.get("node_encoder_in")
+        decoder_out=arch_parameters.get("decoder_out")
+        mlp_depth=arch_parameters.get("mlp_depth")
+
         self.num_mp_blocks = num_mp_blocks
+        self.hidden_dim = hidden_dim
         self.edge_encoder_in = edge_encoder_in
         self.node_encoder_in = node_encoder_in
         self.decoder_out = decoder_out
@@ -356,54 +368,3 @@ class MultiScaleGNNBuilder:
             f"  MLP depth: {self.mlp_depth}"
         ]
         return "\n".join(lines)
-
-
-# ============================================================================
-# Example usage and validation
-# ============================================================================
-
-if __name__ == "__main__":
-    
-    print("="*80)
-    print("SINGLE-SCALE GNN EXAMPLE")
-    print("="*80)
-    
-    # Build single-scale GNN with 8 MP blocks
-    builder = GNNArchBuilder(
-        num_mp_blocks=8,
-        hidden_dim=128,
-        edge_encoder_in=2,
-        node_encoder_in=5,
-        decoder_out=3,
-        mlp_depth=3
-    )
-    
-    print(builder.summary())
-    arch = builder.build_single_scale()
-    
-    print("\nGenerated architecture keys:")
-    for key in arch:
-        print(f"  {key}: {arch[key]}")
-    
-    print("\n" + "="*80)
-    print("MULTI-SCALE GNN EXAMPLE (3 scales)")
-    print("="*80)
-    
-    # Build 3-scale GNN with varying MP blocks and hidden dims
-    multi_builder = MultiScaleGNNBuilder(
-        num_scales=3,
-        mp_blocks_per_scale=[4, 4, 4],
-        hidden_dims=[128, 128, 128],
-        edge_encoder_in=2,
-        node_encoder_in=5,
-        decoder_out=3,
-        mlp_depth=3,
-        skip_connections=True
-    )
-    
-    print(multi_builder.summary())
-    multi_arch = multi_builder.build()
-    
-    print("\nGenerated architecture keys:")
-    for key in sorted(multi_arch.keys()):
-        print(f"  {key}")

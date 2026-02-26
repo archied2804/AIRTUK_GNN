@@ -140,7 +140,7 @@ class GNNArchBuilder:
         current_node_dim = self.hidden_dims[0]
         
         for i in range(self.num_mp_blocks):
-            block_name = f"mp{i+1:02d}"
+            block_name = f"mp{i+1}"
             edge_spec, node_spec = self._make_mp_block_spec(
                 i, 
                 current_edge_dim,
@@ -255,102 +255,63 @@ class MultiScaleGNNBuilder:
         return edge_spec, node_spec
     
     def build(self) -> Dict:
-        """
-        Build multi-scale GNN architecture.
-        
-        Naming convention:
-        - Encoders: edge_encoder, edge_encoder2, edge_encoder3, ...
-        - Scale L blocks: mp<L><i> (e.g., mp111, mp112 for scale 1, blocks 1-2)
-        - Downsampling: down_mp<L><L+1>
-        - Upsampling: up_mp<L+1><L>
-        
-        Returns:
-            dict: Architecture specification
-        """
         arch = {}
-        
-        # Encoders
-        arch["edge_encoder"] = (
-            self.edge_encoder_in,
-            self._make_mlp_hidden_dims(self.hidden_dims[0]),
-            False
-        )
-        arch["node_encoder"] = (
-            self.node_encoder_in,
-            self._make_mlp_hidden_dims(self.hidden_dims[0]),
-            False
-        )
-        
-        # Additional edge encoders for multi-scale
-        for scale_idx in range(1, self.num_scales):
-            encoder_name = f"edge_encoder{scale_idx+1}"
-            arch[encoder_name] = (
-                self.edge_encoder_in,
-                self._make_mlp_hidden_dims(self.hidden_dims[scale_idx]),
-                False
-            )
-        
-        # Encoder path (downsampling)
-        for scale_idx in range(self.num_scales):
-            scale_num = scale_idx + 1
-            hidden = self.hidden_dims[scale_idx]
-            num_blocks = self.mp_blocks_per_scale[scale_idx]
-            
-            # MP blocks at this scale
-            for block_idx in range(num_blocks):
-                block_num = block_idx + 1
-                block_name = f"mp{scale_num}{block_num:02d}" if scale_num <= 2 else f"mp{scale_num}{block_num}"
-                
-                # Determine input edge dimension
-                edge_attr_in = hidden  # From encoder or previous block
-                node_attr_in = hidden
-                
-                edge_spec, node_spec = self._make_mp_block_spec(
-                    hidden, edge_attr_in, node_attr_in
-                )
-                arch[block_name] = (edge_spec, node_spec)
-            
-            # Downsampling layer (except at deepest scale)
-            if scale_idx < self.num_scales - 1:
-                down_mp_name = f"down_mp{scale_num}{scale_num+1}"
-                edge_attr_in = 2 + hidden  # Edge attr from current scale
-                arch[down_mp_name] = (edge_attr_in, self._make_mlp_hidden_dims(hidden), True)
-        
-        # Decoder path (upsampling)
-        for scale_idx in range(self.num_scales - 2, -1, -1):
-            scale_num = scale_idx + 1
-            hidden = self.hidden_dims[scale_idx]
-            num_blocks = self.mp_blocks_per_scale[scale_idx]
-            
-            # Upsampling layer
-            up_mp_name = f"up_mp{scale_num+1}{scale_num}"
-            if self.skip_connections:
-                # Skip connection concatenates features from encoder path
-                upsample_in = 2 * hidden + hidden  # from coarse + skip connection
-            else:
-                upsample_in = 2 * hidden
-            arch[up_mp_name] = (upsample_in, self._make_mlp_hidden_dims(hidden), True)
-            
-            # MP blocks at this scale (after upsampling)
-            for block_idx in range(num_blocks):
-                block_num = block_idx + 1
-                block_name = f"mp{scale_num}{block_num+num_blocks:02d}"
-                
-                edge_attr_in = hidden
-                node_attr_in = 2 * hidden if block_idx == 0 else hidden
-                
-                edge_spec, node_spec = self._make_mp_block_spec(
-                    hidden, edge_attr_in, node_attr_in
-                )
-                arch[block_name] = (edge_spec, node_spec)
-        
-        # Decoder
+        H = self.hidden_dims  # 0-indexed by scale
+
+        # --- Single encoder (shared across all scales in mus_gnn) ---
+        arch["edge_encoder"] = (self.edge_encoder_in, self._make_mlp_hidden_dims(H[0]), False)
+        arch["node_encoder"] = (self.node_encoder_in, self._make_mlp_hidden_dims(H[0]), False)
+
+        # --- Encoder (down) path ---
+        for s_idx in range(self.num_scales - 1):
+            scale = s_idx + 1                        # 1-indexed
+            hidden = H[s_idx]
+            n_blocks = self.mp_blocks_per_scale[s_idx]
+
+            # MP blocks on the way down: mp{scale}1{block}  e.g. mp111, mp112
+            for b in range(n_blocks):
+                key = f"mp{scale}1{b+1}"
+                edge_spec = (hidden + 2*hidden, self._make_mlp_hidden_dims(hidden), True)
+                node_spec = (hidden + hidden,   self._make_mlp_hidden_dims(hidden), True)
+                arch[key] = (edge_spec, node_spec)
+
+            # DownMP transition: down_mp{scale}{scale+1}
+            # Single 3-tuple: (edge_feat_in, mlp_hidden, use_act)
+            arch[f"down_mp{scale}{scale+1}"] = (2 + hidden, self._make_mlp_hidden_dims(hidden), True)
+
+        # --- Bottleneck ---
+        bot_scale = self.num_scales
+        hidden_bot = H[-1]
+        for b in range(self.mp_blocks_per_scale[-1]):
+            # Bottleneck naming: mp{bot_scale}{block}  e.g. mp21, mp31, mp41
+            key = f"mp{bot_scale}{b+1}"
+            edge_spec = (hidden_bot + 2*hidden_bot, self._make_mlp_hidden_dims(hidden_bot), True)
+            node_spec = (hidden_bot + hidden_bot,   self._make_mlp_hidden_dims(hidden_bot), True)
+            arch[key] = (edge_spec, node_spec)
+
+        # --- Decoder (up) path ---
+        for s_idx in range(self.num_scales - 2, -1, -1):
+            scale = s_idx + 1
+            hidden = H[s_idx]
+            n_blocks = self.mp_blocks_per_scale[s_idx]
+
+            # UpMP transition: up_mp{scale+1}{scale}
+            # Single 3-tuple: input = 2 (pos diff) + hidden (coarse) + hidden (fine skip)
+            arch[f"up_mp{scale+1}{scale}"] = (2 + hidden + hidden, self._make_mlp_hidden_dims(hidden), True)
+
+            # MP blocks on the way up: mp{scale}2{block}  e.g. mp121, mp122
+            for b in range(n_blocks):
+                key = f"mp{scale}2{b+1}"
+                edge_spec = (hidden + 2*hidden, self._make_mlp_hidden_dims(hidden), True)
+                node_spec = (hidden + hidden,   self._make_mlp_hidden_dims(hidden), True)
+                arch[key] = (edge_spec, node_spec)
+
+        # --- Decoder MLP ---
         arch["decoder"] = (
-            self.hidden_dims[0],
-            self._make_mlp_hidden_dims(self.hidden_dims[0]) + (self.decoder_out,),
+            H[0],
+            self._make_mlp_hidden_dims(H[0]) + (self.decoder_out,),
             False
         )
-        
         return arch
     
     def summary(self) -> str:

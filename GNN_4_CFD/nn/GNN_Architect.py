@@ -140,7 +140,7 @@ class GNNArchBuilder:
         current_node_dim = self.hidden_dims[0]
         
         for i in range(self.num_mp_blocks):
-            block_name = f"mp{i+1}"
+            block_name = f"mp1{i+1}"
             edge_spec, node_spec = self._make_mp_block_spec(
                 i, 
                 current_edge_dim,
